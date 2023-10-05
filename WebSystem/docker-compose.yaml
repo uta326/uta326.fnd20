@@ -1,0 +1,118 @@
+version: '3'
+
+services:
+  db:
+    container_name: websystem_pgdb
+    restart: always
+    image: postgres:13-alpine
+    environment: 
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_HOST=db
+    networks:
+      app_net:
+        #ipv4_address: 172.18.0.2
+    
+    ports:
+      - 5432:5432
+    volumes:
+      - ./backend/dump.sql:/docker-entrypoint-initdb.d/dump.sql
+      - postgres_data:/var/lib/postgresql/data 
+
+  pgadmin4:
+    container_name: websystem_pgadmin4
+    image: dpage/pgadmin4
+    ports:
+      - "127.0.0.1:8888:80"
+    volumes:
+      - pgadmin4_data:/var/lib/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: root@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: password
+    hostname: pgadmin4
+    depends_on:
+      - db
+    networks:
+      app_net:
+        #ipv4_address: 172.18.0.3
+
+  backend:
+    container_name: websystem_backend
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    command: 
+      # ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+      ["gunicorn", "--bind", ":8000", "backend.wsgi:application"]
+    tty: true
+    volumes:
+      - ./backend:/app/backend
+      - /var/run/docker.sock:/var/run/docker.sock
+      - static:/app/backend/static
+      - ./backend/media:/app/backend/media
+    ports:
+      - 8000:8000
+    networks:
+      app_net:
+        #ipv4_address: 172.18.0.4
+    links:
+      - db:db
+
+  webapp:
+    container_name: websystem_webapp
+    build:
+      context: webapp
+      dockerfile: Dockerfile
+    tty: true
+    networks:
+      app_net:
+        #ipv4_address: 172.18.0.5
+    command:
+      "npm run dev"
+    volumes:
+      - ./webapp:/webapp
+      - /var/run/docker.sock:/var/run/docker.sock
+      - node-modules:/webapp/node_modules
+    ports:
+      - 3000:3000
+    links:
+      - backend:backend
+    depends_on:
+      - backend
+
+
+  nginx:
+    container_name: websystem_nginx
+    image: nginx
+    build:
+      context: nginx
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
+    volumes:
+      - static:/app/backend/static
+    ports:
+      - 8080:8080
+    links: 
+      - backend
+      - webapp
+    networks:
+      app_net:
+        #ipv4_address: 172.18.0.6
+    command: [nginx-debug, '-g', 'daemon off;']
+
+networks:
+  app_net:
+    # driver: bridge
+    # ipam:
+    #   driver: default
+    #   config:
+    #     - subnet: 172.18.0.0/16
+
+volumes:
+  postgres_data:
+  pgadmin4_data:
+  node-modules:
+  static:
+  media: 
